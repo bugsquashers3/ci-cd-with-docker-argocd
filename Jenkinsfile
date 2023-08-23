@@ -1,7 +1,7 @@
 pipeline {
   agent {
     docker {
-      image 'zaralink/maven-docker-agent:v1'
+      image 'bugsquashers/maven-docker-agent:v1'
       args '--user root -v /var/run/docker.sock:/var/run/docker.sock' // mount Docker socket to access the host's Docker daemon
     }
   }
@@ -9,36 +9,37 @@ pipeline {
     stage('Checkout') {
       steps {
         sh 'echo passed'
-        //git branch: 'master', url: 'https://github.com/steph-nnamani/ci-cd-with-docker-argocd.git'
+        //git branch: 'master', url: 'https://github.com/bugsquashers3/argocd-project.git'
       }
     }
     stage('Build and Test') {
       steps {
-        // build the project and create a WAR file
-        sh 'mvn clean package'
-    }
+        sh 'ls -ltr'
+        // build the project and create a JAR file
+        sh 'cd ci-cd-with-argocd/spring-boot-app && mvn clean package'
+      }
     }
     stage('Static Code Analysis') {
       environment {
-        SONAR_URL = "3.87.0.45:9000"
+        SONAR_URL = "http://172.31.92.102:9000"
       }
       steps {
         withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-         // sh 'mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
+          sh 'cd ci-cd-with-argocd/spring-boot-app && mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
         }
       }
     }
-    stage('Build and Push Docker Image to imageRegistry') {
+    stage('Build and Push Docker Image') {
       environment {
-        DOCKER_IMAGE = "zaralink/ultimate-cicd:${BUILD_NUMBER}"
-         //DOCKERFILE_LOCATION = "https://github.com/steph-nnamani/ci-cd-with-docker-argocd/Dockerfile"
-        REGISTRY_CREDENTIALS = credentials('docker_cred')
+        DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
+        // DOCKERFILE_LOCATION = "ci-cd-with-argocd/spring-boot-app/Dockerfile"
+        REGISTRY_CREDENTIALS = credentials('docker-credential')
       }
-    steps {
+      steps {
         script {
-            sh 'docker build -t ${DOCKER_IMAGE} .'
+            sh 'cd ci-cd-with-argocd/spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
             def dockerImage = docker.image("${DOCKER_IMAGE}")
-            docker.withRegistry('https://index.docker.io/v1/', "docker_cred") {
+            docker.withRegistry('https://index.docker.io/v1/', "docker-credential") {
                 dockerImage.push()
             }
         }
@@ -46,22 +47,22 @@ pipeline {
     }
     stage('Update Deployment File') {
         environment {
-            GIT_REPO_NAME = "ci-cd-with-docker-argocd"
-            GIT_USER_NAME = "steph-nnamani"
+            GIT_REPO_NAME = "argocd-project"
+            GIT_USER_NAME = "bugsquashers3"
         }
         steps {
             withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
-               sh '''
-    git config user.email "steph-nnamani@gmail.com"
-    git config user.name "Stephen Nnamani"
-    BUILD_NUMBER=${BUILD_NUMBER}
-    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" kubernetes-deployment-manifest/deployment.yml 
-    git add kubernetes-deployment-manifest/deployment.yml
-    git commit -m "Updated deployment image to version ${BUILD_NUMBER}"
-    git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
-'''  
+                sh '''
+                    git config user.email "bugsquashers3@gmail.com"
+                    git config user.name "bugsquashers3"
+                    BUILD_NUMBER=${BUILD_NUMBER}
+                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" ci-cd-with-argocd/app-manifests/deployment.yml
+                    git add ci-cd-with-argocd/app-manifests/deployment.yml
+                    git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                    git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:master
+                '''
             }
-         }
-       }
-      }
+        }
     }
+  }
+}
